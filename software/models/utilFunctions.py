@@ -14,10 +14,9 @@ except ImportError:
 	print "Warning:"
 	print "Cython modules for some of the core functions were not imported."
 	print "Please refer to the README file for the instructions to compile the cython modules"
-	print "Exiting the code!!"
 	print "-------------------------------------------------------------------------------"
 	print "\n"
-	sys.exit(0)
+	UF_C = None
 
 def isPower2(num):
 	"""
@@ -141,17 +140,6 @@ def genBhLobe(x):
 
 
 
-def genSpecSines(ipfreq, ipmag, ipphase, N, fs):
-	"""
-	Generate a spectrum from a series of sine values, calling a C function
-	ipfreq, ipmag, ipphase: sine peaks frequencies, magnitudes and phases
-	N: size of the complex spectrum to generate; fs: sampling frequency
-	returns Y: generated complex spectrum of sines
-	"""
-
-	Y = UF_C.genSpecSines(N*ipfreq/float(fs), ipmag, ipphase, N)
-	return Y
-
 def genSpecSines_p(ipfreq, ipmag, ipphase, N, fs):
 	"""
 	Generate a spectrum from a series of sine values
@@ -180,6 +168,12 @@ def genSpecSines_p(ipfreq, ipmag, ipphase, N, fs):
 				Y[b[m]] += lmag[m]*np.exp(1j*ipphase[i])
 		Y[hN+1:] = Y[hN-1:0:-1].conjugate()            # fill the negative part of the spectrum
 	return Y
+
+# Determine which implementation of genSpecSines to use.
+if UF_C:
+    genSpecSines = lambda ipfreq, ipmag, ipphase, N, fs: UF_C.genSpecSines(N*ipfreq/float(fs), ipmag, ipphase, N)
+else:
+    genSpecSines = genSpecSines_p
 
 def sinewaveSynth(freqs, amp, H, fs):
 	"""
@@ -276,7 +270,7 @@ def f0Twm(pfreq, pmag, ef0max, minf0, maxf0, f0t=0):
 	if (f0cf.size == 0):                             # return 0 if no peak candidates
 		return 0
 
-	f0, f0error = UF_C.twm(pfreq, pmag, f0cf)        # call the TWM function with peak candidates
+	f0, f0error = TWM(pfreq, pmag, f0cf)        # call the TWM function with peak candidates
 	
 	if (f0>0) and (f0error<ef0max):                  # accept and return f0 if below max error allowed
 		return f0
@@ -329,6 +323,12 @@ def TWM_p(pfreq, pmag, f0c):
 
 	return f0, Error[f0index]
 
+# Determine which implementation of TWM to use.
+if UF_C:
+    TWM = UF_C.twm
+else:
+    TWM = TWM_p
+
 def sineSubtraction(x, N, H, sfreq, smag, sphase, fs):
 	"""
 	Subtract sinusoids from a sound
@@ -350,7 +350,7 @@ def sineSubtraction(x, N, H, sfreq, smag, sphase, fs):
 	for l in range(L):
 		xw = x[pin:pin+N]*w                              # window the input sound                               
 		X = fft(fftshift(xw))                            # compute FFT 
-		Yh = UF_C.genSpecSines(N*sfreq[l,:]/fs, smag[l,:], sphase[l,:], N)   # generate spec sines          
+		Yh = genSpecSines(sfreq[l,:], smag[l,:], sphase[l,:], N, fs)   # generate spec sines
 		Xr = X-Yh                                        # subtract sines from original spectrum
 		xrw = np.real(fftshift(ifft(Xr)))                # inverse FFT
 		xr[pin:pin+N] += xrw*sw                          # overlap-add
@@ -378,7 +378,7 @@ def stochasticResidualAnal(x, N, H, sfreq, smag, sphase, fs, stocf):
 	for l in range(L):
 		xw = x[pin:pin+N] * w                               # window the input sound                               
 		X = fft(fftshift(xw))                               # compute FFT 
-		Yh = UF_C.genSpecSines(N*sfreq[l,:]/fs, smag[l,:], sphase[l,:], N)   # generate spec sines          
+		Yh = genSpecSines(sfreq[l,:], smag[l,:], sphase[l,:], N, fs)   # generate spec sines
 		Xr = X-Yh                                           # subtract sines from original spectrum
 		mXr = 20*np.log10(abs(Xr[:hN]))                     # magnitude spectrum of residual
 		mXrenv = resample(np.maximum(-200, mXr), mXr.size*stocf)  # decimate the mag spectrum                        
